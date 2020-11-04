@@ -126,11 +126,13 @@ async function main() {
         // Add target architectures
         //////////////////////////////////////
         for (const targetArchitecture of targetArchitectures) {
-            core.startGroup("Add target architecture: " + targetArchitecture)
-            await exec.exec("docker", ["exec", container].concat(
-                ["dpkg", "--add-architecture", targetArchitecture]
-            ))
-            core.endGroup()
+            if (targetArchitecture != "amd64") {
+                core.startGroup("Add target architecture: " + targetArchitecture)
+                await exec.exec("docker", ["exec", container].concat(
+                    ["dpkg", "--add-architecture", targetArchitecture]
+                ))
+                core.endGroup()
+            }
         }
 
         //////////////////////////////////////
