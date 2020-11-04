@@ -22,10 +22,23 @@ async function getOS(distribution) {
 
 async function main() {
     try {
-        const targetArchitecture = core.getInput("target_architecture") || "armhf"
+        const getDevPackagesFromBackports = (core.getInput("get_dev_packages_from_backports") == "1") || 0
+
+        const targetArchitectures = core.getInput("target_architectures").replace(" ", "").split(",") || []
 
         const sourceRelativeDirectory = core.getInput("source_directory") || "./"
         const artifactsRelativeDirectory = core.getInput("artifacts_directory") || "./"
+
+        const defaultDpkgBuildPackageOpts = [
+            // Don't sign for now
+            "--no-sign",
+
+            // Don't worry about build dependencies - we have already installed them
+            // (Seems to not recognize that some packages are installed)
+            "-d"
+        ]
+        const dpkgBuildPackageOpts = core.getInput("dpkg_buildpackage_opts").replace(" ", "").split(",") || defaultDpkgBuildPackageOpts
+        const lintianOpts = core.getInput("lintian_opts") || []
 
         const workspaceDirectory = process.cwd()
         const sourceDirectory = path.join(workspaceDirectory, sourceRelativeDirectory)
@@ -43,6 +56,9 @@ async function main() {
 
         fs.mkdirSync(artifactsDirectory, { recursive: true })
 
+        //////////////////////////////////////
+        // Print details
+        //////////////////////////////////////
         core.startGroup("Print details")
         const details = {
             package: package,
@@ -61,6 +77,9 @@ async function main() {
         console.log(details)
         core.endGroup()
 
+        //////////////////////////////////////
+        // Create and start container
+        //////////////////////////////////////
         core.startGroup("Create container")
         await exec.exec("docker", [
             "create",
@@ -84,92 +103,145 @@ async function main() {
         ])
         core.endGroup()
 
+        //////////////////////////////////////
+        // Create tarball of source if package is revision of upstream
+        //////////////////////////////////////
         if (revision) {
             core.startGroup("Create tarball")
-            await exec.exec("docker", [
-                "exec",
-                container,
-                "tar",
-                "--exclude-vcs",
-                "--exclude", "./debian",
-                "--transform", `s/^\./${package}-${version}/`,
-                "-cvzf", `${buildDirectory}/${package}_${version}.orig.tar.gz`,
-                "-C", sourceDirectory,
-                "./"
-            ])
+            await exec.exec("docker", ["exec", container].concat(
+                [
+                    "tar",
+                    "--exclude-vcs",
+                    "--exclude", "./debian",
+                    "--transform", `s/^\./${package}-${version}/`,
+                    "-cvzf", `${buildDirectory}/${package}_${version}.orig.tar.gz`,
+                    "-C", sourceDirectory,
+                    "./"
+                ]
+            ))
             core.endGroup()
         }
 
-        core.startGroup("Add target architecture")
-        await exec.exec("docker", [
-            "exec",
-            container,
-            "dpkg", "--add-architecture", targetArchitecture
-        ])
-        core.endGroup()
+        //////////////////////////////////////
+        // Add target architectures
+        //////////////////////////////////////
+        if (targetArchitectures.length != 0) {
+            for (const targetArchitecture of targetArchitectures) {
+                core.startGroup("Add target architecture: " + targetArchitecture)
+                await exec.exec("docker", ["exec", container].concat(
+                    ["dpkg", "--add-architecture", targetArchitecture]
+                ))
+                core.endGroup()
+            }
+        }
+
+        //////////////////////////////////////
+        // Update packages list
+        //////////////////////////////////////
+        if (getDevPackagesFromBackports) {
+            core.startGroup("Add backports repo to apt sources")
+            await exec.exec("docker", ["exec", container].concat(
+                ["bash", "-c"].concat(
+                    [
+                        "echo 'deb http://deb.debian.org/debian " + distribution + "-backports main' > /etc/apt/sources.list.d/" + distribution + "-backports.list"
+                    ]
+                )
+            ))
+            core.endGroup()
+        }
 
         core.startGroup("Update packages list")
-        await exec.exec("docker", [
-            "exec",
-            container,
-            "apt-get", "update"
-        ])
+        await exec.exec("docker", ["exec", container].concat(
+            ["apt-get", "update"]
+        ))
         core.endGroup()
 
-        core.startGroup("Install development packages")
-        await exec.exec("docker", [
-            "exec",
-            container,
-            "apt-get", "install", "--no-install-recommends", "-y",
-
-            // General packaging stuff
-            "dpkg-dev",
-            "debhelper",
+        //////////////////////////////////////
+        // Install required packages
+        //////////////////////////////////////
+        function getDevPackages() {
+            devPackages = [
+                // General packaging stuff
+                "dpkg-dev",
+                "debhelper",
+                "lintian"
+            ]
 
             // Used by pybuild
-            "libpython3.7-minimal:" + targetArchitecture
-        ])
+            const libPythonPackages = targetArchitectures.map(targetArchitecture => {
+                return "libpython3.7-minimal:" + targetArchitecture
+            })
+
+            return devPackages.concat(libPythonPackages)
+        }
+
+        function getAptInstallCommand() {
+            setDistroFields = []
+            if (getDevPackagesFromBackports) {
+                setDistroFields = ["-t", distribution + "-backports"]
+            }
+            return ["apt-get", "install"]
+                .concat(setDistroFields)
+                .concat(
+                    ["--no-install-recommends", "-y"]
+                )
+        }
+
+        core.startGroup("Install development packages")
+        await exec.exec("docker", ["exec", container].concat(
+            getAptInstallCommand().concat(getDevPackages())
+        ))
         core.endGroup()
 
         core.startGroup("Install build dependencies")
-        await exec.exec("docker", [
-            "exec",
-            container,
-            "apt-get", "build-dep", "-y", sourceDirectory
-        ])
+        await exec.exec("docker", ["exec", container].concat(
+            ["apt-get", "build-dep", "-y", sourceDirectory]
+        ))
         core.endGroup()
 
-        core.startGroup("Build package")
-        await exec.exec("docker", [
-            "exec",
-            container,
-            "dpkg-buildpackage",
+        //////////////////////////////////////
+        // Build package and run static analysis for all architectures
+        //////////////////////////////////////
+        for (const targetArchitecture of targetArchitectures) {
+            core.startGroup("Build package for architecture: " + targetArchitecture)
+            await exec.exec("docker", ["exec", container].concat(
+                [
+                    "dpkg-buildpackage",
+                    "-a" + targetArchitecture
+                ].concat(dpkgBuildPackageOpts)
+            ))
+            core.endGroup()
 
-            // Don't sign for now
-            "--no-sign",
+            core.startGroup("Run static analysis")
+            await exec.exec("docker", ["exec", container].concat(
+                [
+                    "find",
+                    buildDirectory,
+                    "-maxdepth", "1",
+                    "-name", `*${targetArchitecture}.changes`,
+                    "-type", "f",
+                    "-print",
+                    "-exec"
+                ]).concat(["lintian"]).concat(lintianOpts).concat(["{}", ";"]
+            ))
+            core.endGroup()
+        }
 
-            // Ignore build dependencies - we have already installed them
-            //
-            // Seems to not recognise if python3-all and python3-gpiozero are installed
-            // and may affect other packages in the same way - but THEY ARE THERE
-            "-d",
-
-            "-a" + targetArchitecture
-        ])
-        core.endGroup()
-
+        //////////////////////////////////////
+        // Move artifacts
+        //////////////////////////////////////
         core.startGroup("Move artifacts")
-        await exec.exec("docker", [
-            "exec",
-            container,
-            "find",
-            buildDirectory,
-            "-maxdepth", "1",
-            "-name", `*${version}*.*`,
-            "-type", "f",
-            "-print",
-            "-exec", "mv", "{}", artifactsDirectory, ";"
-        ])
+        await exec.exec("docker", ["exec", container].concat(
+            [
+                "find",
+                buildDirectory,
+                "-maxdepth", "1",
+                "-name", `*${version}*.*`,
+                "-type", "f",
+                "-print",
+                "-exec", "mv", "{}", artifactsDirectory, ";"
+            ]
+        ))
         core.endGroup()
     } catch (error) {
         core.setFailed(error.message)
