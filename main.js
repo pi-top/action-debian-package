@@ -4,6 +4,7 @@ const firstline = require("firstline")
 const hub = require("docker-hub-utils")
 const path = require("path")
 const fs = require("fs")
+const assert = require('assert')
 
 function getDistribution(distribution) {
     return distribution.replace("UNRELEASED", "unstable")
@@ -22,23 +23,22 @@ async function getOS(distribution) {
 
 async function main() {
     try {
-        const getDevPackagesFromBackports = (core.getInput("get_dev_packages_from_backports") == "1") || 0
-
-        const targetArchitectures = core.getInput("target_architectures").replace(" ", "").split(",") || []
+        const targetArchitectures = core.getInput("target_architectures").replace(" ", "").split(",") || ["amd64"]
+        assert(targetArchitectures.length > 0)
 
         const sourceRelativeDirectory = core.getInput("source_directory") || "./"
         const artifactsRelativeDirectory = core.getInput("artifacts_directory") || "./"
 
-        const defaultDpkgBuildPackageOpts = [
-            // Don't sign for now
-            "--no-sign",
+        // Don't sign anything - no keys provided
+        // Don't worry about build dependencies - we have already installed them
+        // (Seems to not recognize that some packages are installed)
+        const _defaultDpkgBuildPackageOpts = "-us -uc -d"
+        const dpkgBuildPackageOpts = core.getInput("dpkg_buildpackage_opts") || _defaultDpkgBuildPackageOpts
+        const lintianOpts = core.getInput("lintian_opts") || ""
 
-            // Don't worry about build dependencies - we have already installed them
-            // (Seems to not recognize that some packages are installed)
-            "-d"
-        ]
-        const dpkgBuildPackageOpts = core.getInput("dpkg_buildpackage_opts").replace(" ", "").split(",") || defaultDpkgBuildPackageOpts
-        const lintianOpts = core.getInput("lintian_opts") || []
+        const getDevPackagesFromBackports = (core.getInput("get_dev_packages_from_backports") == "1") || false
+
+        const usesPybuild = (core.getInput("_uses_pybuild") == "1") || false
 
         const workspaceDirectory = process.cwd()
         const sourceDirectory = path.join(workspaceDirectory, sourceRelativeDirectory)
@@ -125,14 +125,12 @@ async function main() {
         //////////////////////////////////////
         // Add target architectures
         //////////////////////////////////////
-        if (targetArchitectures.length != 0) {
-            for (const targetArchitecture of targetArchitectures) {
-                core.startGroup("Add target architecture: " + targetArchitecture)
-                await exec.exec("docker", ["exec", container].concat(
-                    ["dpkg", "--add-architecture", targetArchitecture]
-                ))
-                core.endGroup()
-            }
+        for (const targetArchitecture of targetArchitectures) {
+            core.startGroup("Add target architecture: " + targetArchitecture)
+            await exec.exec("docker", ["exec", container].concat(
+                ["dpkg", "--add-architecture", targetArchitecture]
+            ))
+            core.endGroup()
         }
 
         //////////////////////////////////////
@@ -172,7 +170,11 @@ async function main() {
                 return "libpython3.7-minimal:" + targetArchitecture
             })
 
-            return devPackages.concat(libPythonPackages)
+            if (usesPybuild) {
+                devPackages = devPackages.concat(libPythonPackages)
+            }
+
+            return devPackages
         }
 
         function getAptInstallCommand() {
@@ -208,7 +210,7 @@ async function main() {
                 [
                     "dpkg-buildpackage",
                     "-a" + targetArchitecture
-                ].concat(dpkgBuildPackageOpts)
+                ].concat(dpkgBuildPackageOpts.split(" "))
             ))
             core.endGroup()
 
@@ -221,8 +223,9 @@ async function main() {
                     "-name", `*${targetArchitecture}.changes`,
                     "-type", "f",
                     "-print",
-                    "-exec"
-                ]).concat(["lintian"]).concat(lintianOpts).concat(["{}", ";"]
+                    "-exec",
+                    "lintian"
+                ]).concat(lintianOpts.split(" ")).concat(["{}", ";"]
             ))
             core.endGroup()
         }

@@ -1,9 +1,6 @@
 name: Test Action
 
-on:
-  push:
-    branches:
-      - '*'
+on: push
 
 jobs:
   test:
@@ -11,15 +8,15 @@ jobs:
     strategy:
       matrix:
         include:
+          # - package: pitop
+          #   repo: https://github.com/pi-top/pi-top-Python-API.git
+          #   ref: master
           - package: at
             repo: https://salsa.debian.org/debian/at.git
             ref: debian/3.1.23-1
           - package: lolcat
             repo: https://salsa.debian.org/ruby-team/lolcat.git
             ref: debian/100.0.1-2
-          - package: termshark
-            repo: https://salsa.debian.org/go-team/packages/termshark.git
-            ref: debian/2.0.3-1
           - package: deber
             repo: https://github.com/dawidd6/deber.git
             ref: v1.0.0
@@ -40,7 +37,9 @@ jobs:
         with:
           source_directory: ${{matrix.package}}
           artifacts_directory: artifacts
-      - name: Check files
+      - name: Verify that artifacts are found in artifacts_directory
         run: |
-          ls -lh artifacts/${{matrix.package}}*.*
-          ls -lh ${{matrix.package}}*.* && false || true
+          ls -lh artifacts/${{matrix.package}}*.* &>/dev/null && echo "Artifacts found in artifacts_directory"
+      - name: Verify that artifacts are not found outside of artifacts_directory
+        run: |
+          ! ls -lh ${{matrix.package}}*.* &>/dev/null || (echo "Artifacts found outside of artifacts_directory" && false)

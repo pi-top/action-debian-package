@@ -1,9 +1,13 @@
 name: Build Debian package
-description: Build Debian package from source for selected target release
+description: Build Debian package from source for selected target releases
 branding:
   color: red
   icon: package
 inputs:
+  target_architectures:
+    description: Comma-separated options list of target architectures to build for
+    required: false
+    default: "amd64"
   source_directory:
     description: Directory where Debian sources are, relative to workspace
     required: false
@@ -12,20 +16,20 @@ inputs:
     description: Directory where build artifacts will be placed, relative to workspace
     required: false
     default: "./"
-  target_architectures:
-    description: Comma-separated options list of target architectures to build for
-    required: false
-    default: ""
   dpkg_buildpackage_opts:
-    description: Comma-separated options list provided to 'dpkg-buildpackage' as command line parameters (note that '-a' is automatically provided for target architectures specified by target_architectures)
+    description: Command line parameters provided to 'dpkg-buildpackage' (note that '-a' is automatically provided for target architectures specified by target_architectures)
     required: false
-    default: "--no-sign, -d"
+    default: "-us -uc -d"
   lintian_opts:
-    description: Comma-separated options list provided to 'lintian' as command line parameters
+    description: Command line parameters provided to 'lintian'
     required: false
     default: ""
   get_dev_packages_from_backports:
     description: Only set to 1 if you know what you are doing. All other values are considered as 0
+    required: false
+    default: "0"
+  _uses_pybuild:
+    description: TEMPORARY. If set to "1", this will install libpython3.7-minimal for all target architectures, so that pybuild can cross-compile
     required: false
     default: "0"
 
