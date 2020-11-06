@@ -216,7 +216,7 @@ async function main() {
             ))
             core.endGroup()
 
-            core.startGroup("Run static analysis")
+            core.startGroup("Run static analysis for architecture: " + targetArchitecture)
             await exec.exec("docker", ["exec", container].concat(
                 [
                     "find",
@@ -227,7 +227,7 @@ async function main() {
                     "-print",
                     "-exec",
                     "lintian"
-                ]).concat(lintianOpts.split(" ")).concat(["{}", ";"]
+                ]).concat(lintianOpts.split(" ")).concat(["{}", "+"]
             ))
             core.endGroup()
         }
