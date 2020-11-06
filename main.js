@@ -244,7 +244,7 @@ async function main() {
                 "-name", `*${version}*.*`,
                 "-type", "f",
                 "-print",
-                "-exec", "mv", "{}", artifactsDirectory, ";"
+                "-exec", "mv", "{}", artifactsDirectory, "+"
             ]
         ))
         core.endGroup()
