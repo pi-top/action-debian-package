@@ -29,7 +29,7 @@ inputs:
     required: false
     default: "0"
   _uses_pybuild:
-    description: Workaround for https://github.com/pi-top/action-debian-package/issues/3. If set to "1", this will install libpython3.7-minimal for all target architectures, so that pybuild can cross-compile
+    description: Workaround for https://github.com/pi-top/action-debian-package/issues/3. If set to "1", this will install libpython3.*-minimal for all target architectures, so that pybuild can cross-compile
     required: false
     default: "0"
 

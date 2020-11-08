@@ -169,7 +169,7 @@ async function main() {
 
             // Used by pybuild
             const libPythonPackages = targetArchitectures.map(targetArchitecture => {
-                return "libpython3.7-minimal:" + targetArchitecture
+                return "libpython3.*-minimal:" + targetArchitecture
             })
 
             if (usesPybuild) {
@@ -182,7 +182,7 @@ async function main() {
         function getAptInstallCommand() {
             setDistroFields = []
             if (getDevPackagesFromBackports) {
-                setDistroFields = ["-t", distribution + "-backports"]
+                setDistroFields = ["-t", getDistribution(distribution) + "-backports"]
             }
             return ["apt-get", "install"]
                 .concat(setDistroFields)
