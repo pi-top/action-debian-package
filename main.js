@@ -143,7 +143,7 @@ async function main() {
             await exec.exec("docker", ["exec", container].concat(
                 ["bash", "-c"].concat(
                     [
-                        "echo 'deb http://deb.debian.org/debian " + distribution + "-backports main' > /etc/apt/sources.list.d/" + distribution + "-backports.list"
+                        "echo 'deb http://deb.debian.org/debian " + getDistribution(distribution) + "-backports main' > /etc/apt/sources.list.d/" + getDistribution(distribution) + "-backports.list"
                     ]
                 )
             ))
