@@ -31,8 +31,7 @@ inputs:
   additional_target_arch_multiarch_packages:
     description: Comma-separated list of target-architecture dependent packages to install, in addition to build dependencies.
     required: false
-    # Used by pybuild for Python packages
-    default: "libpython3.7-minimal"
+    default: ""
 
 runs:
   using: node12

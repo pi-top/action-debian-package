@@ -48,7 +48,7 @@ async function main() {
         const targetArchitectures = core.getInput("target_architectures").replace(" ", "").split(",") || ["amd64"]
         assert(targetArchitectures.length > 0)
 
-        const additionalPackagesArchDep = core.getInput("additional_target_arch_multiarch_packages").replace(" ", "").split(",") || ["libpython3.7-minimal"]
+        const additionalPackagesArchDep = core.getInput("additional_target_arch_multiarch_packages").replace(" ", "").split(",") || []
 
 
         // Don't sign anything - no keys provided
