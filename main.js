@@ -6,10 +6,8 @@ const path = require("path")
 const fs = require("fs")
 const assert = require('assert')
 
-function getDistribution(distribution) {
+function getReleaseDistribution(distribution) {
     return distribution.replace("UNRELEASED", "unstable")
-                       .replace("-security", "")
-                       .replace("-backports", "")
 }
 
 async function getOS(distribution) {
@@ -23,23 +21,15 @@ async function getOS(distribution) {
 
 async function main() {
     try {
-        const targetArchitectures = core.getInput("target_architectures").replace(" ", "").split(",") || ["amd64"]
-        assert(targetArchitectures.length > 0)
-
+        /////////////////////////////////////////
+        // Command line arguments - directories
+        /////////////////////////////////////////
         const sourceRelativeDirectory = core.getInput("source_directory") || "./"
         const artifactsRelativeDirectory = core.getInput("artifacts_directory") || "./"
 
-        // Don't sign anything - no keys provided
-        // Don't worry about build dependencies - we have already installed them
-        // (Seems to not recognize that some packages are installed)
-        const _defaultDpkgBuildPackageOpts = "-us -uc -d --post-clean"
-        const dpkgBuildPackageOpts = core.getInput("dpkg_buildpackage_opts") || _defaultDpkgBuildPackageOpts
-        const lintianOpts = core.getInput("lintian_opts") || ""
-
-        const getDevPackagesFromBackports = (core.getInput("get_dev_packages_from_backports") == "1") || false
-
-        const usesPybuild = (core.getInput("_uses_pybuild") == "1") || false
-
+        /////////////////////////////////////////
+        // Read changelog from source
+        /////////////////////////////////////////
         const workspaceDirectory = process.cwd()
         const sourceDirectory = path.join(workspaceDirectory, sourceRelativeDirectory)
         const buildDirectory = path.dirname(sourceDirectory)
@@ -47,12 +37,29 @@ async function main() {
 
         const file = path.join(sourceDirectory, "debian/changelog")
         const changelog = await firstline(file)
-        const regex = /^(?<package>.+) \(((?<epoch>[0-9]+):)?(?<version>[^:-]+)(-(?<revision>[^:-]+))?\) (?<distribution>.+);/
+        const regex = /^(?<sourcePackage>.+) \(((?<epoch>[0-9]+):)?(?<version>[^:-]+)(-(?<revision>[^:-]+))?\) (?<sourceDistribution>.+);/
         const match = changelog.match(regex)
-        const { package, epoch, version, revision, distribution } = match.groups
-        const os = await getOS(getDistribution(distribution))
-        const container = package
-        const image = os + ":" + getDistribution(distribution)
+        const { sourcePackage, epoch, version, revision, sourceDistribution } = match.groups
+        const container = sourcePackage
+
+        //////////////////////////////////////
+        // Command line arguments - other
+        //////////////////////////////////////
+        const targetArchitectures = core.getInput("target_architectures").replace(" ", "").split(",") || ["amd64"]
+        assert(targetArchitectures.length > 0)
+
+        const additionalPackagesArchDep = core.getInput("additional_target_arch_multiarch_packages").replace(" ", "").split(",") || ["libpython3.7-minimal"]
+
+
+        // Don't sign anything - no keys provided
+        // Don't worry about build dependencies - we have already installed them
+        // (Seems to not recognize that some packages are installed)
+        const _defaultDpkgBuildPackageOpts = "-us -uc -d --post-clean"
+        const dpkgBuildPackageOpts = core.getInput("dpkg_buildpackage_opts") || _defaultDpkgBuildPackageOpts
+        const lintianOpts = core.getInput("lintian_opts") || ""
+        const buildDistribution = core.getInput("distribution") || getReleaseDistribution(sourceDistribution)
+        const imageOS = await getOS(buildDistribution)
+        const image = imageOS + ":" + buildDistribution
 
         fs.mkdirSync(artifactsDirectory, { recursive: true })
 
@@ -61,12 +68,12 @@ async function main() {
         //////////////////////////////////////
         core.startGroup("Print details")
         const details = {
-            package: package,
+            sourcePackage: sourcePackage,
             epoch: epoch,
             version: version,
             revision: revision,
-            distribution: getDistribution(distribution),
-            os: os,
+            sourceDistribution: sourceDistribution,
+            imageOS: imageOS,
             container: container,
             image: image,
             workspaceDirectory: workspaceDirectory,
@@ -113,8 +120,8 @@ async function main() {
                     "tar",
                     "--exclude-vcs",
                     "--exclude", "./debian",
-                    "--transform", `s/^\./${package}-${version}/`,
-                    "-cvzf", `${buildDirectory}/${package}_${version}.orig.tar.gz`,
+                    "--transform", `s/^\./${sourcePackage}-${version}/`,
+                    "-cvzf", `${buildDirectory}/${sourcePackage}_${version}.orig.tar.gz`,
                     "-C", sourceDirectory,
                     "./"
                 ]
@@ -138,18 +145,6 @@ async function main() {
         //////////////////////////////////////
         // Update packages list
         //////////////////////////////////////
-        if (getDevPackagesFromBackports) {
-            core.startGroup("Add backports repo to apt sources")
-            await exec.exec("docker", ["exec", container].concat(
-                ["bash", "-c"].concat(
-                    [
-                        "echo 'deb http://deb.debian.org/debian " + getDistribution(distribution) + "-backports main' > /etc/apt/sources.list.d/" + getDistribution(distribution) + "-backports.list"
-                    ]
-                )
-            ))
-            core.endGroup()
-        }
-
         core.startGroup("Update packages list")
         await exec.exec("docker", ["exec", container].concat(
             ["apt-get", "update"]
@@ -167,39 +162,36 @@ async function main() {
                 "lintian"
             ]
 
-            // Used by pybuild
-            const libPythonPackages = targetArchitectures.map(targetArchitecture => {
-                return "libpython3.*-minimal:" + targetArchitecture
-            })
+            // Add additional target architecture-specific packages
+            const additionalPackagesToInstall = targetArchitectures.reduce(
+                (accumulator, targetArchitecture) => [
+                    ...accumulator,
+                    ...additionalPackagesArchDep.map(package => `${package}:${targetArchitecture}`)
+                ],
+                []
+            )
 
-            if (usesPybuild) {
-                devPackages = devPackages.concat(libPythonPackages)
-            }
-
-            return devPackages
-        }
-
-        function getAptInstallCommand() {
-            setDistroFields = []
-            if (getDevPackagesFromBackports) {
-                setDistroFields = ["-t", getDistribution(distribution) + "-backports"]
-            }
-            return ["apt-get", "install"]
-                .concat(setDistroFields)
-                .concat(
-                    ["--no-install-recommends", "-y"]
-                )
+            return devPackages.concat(additionalPackagesToInstall)
         }
 
         core.startGroup("Install development packages")
         await exec.exec("docker", ["exec", container].concat(
-            getAptInstallCommand().concat(getDevPackages())
+            [
+                "apt-get", "install",
+                "-t", buildDistribution,
+                "--no-install-recommends",
+                "-y"
+            ].concat(getDevPackages())
         ))
         core.endGroup()
 
         core.startGroup("Install build dependencies")
         await exec.exec("docker", ["exec", container].concat(
-            ["apt-get", "build-dep", "-y", sourceDirectory]
+            [
+                "apt-get", "build-dep",
+                "-y",
+                sourceDirectory,
+            ]
         ))
         core.endGroup()
 
@@ -211,7 +203,9 @@ async function main() {
             await exec.exec("docker", ["exec", container].concat(
                 [
                     "dpkg-buildpackage",
-                    "-a" + targetArchitecture
+                    "-a", targetArchitecture,
+                    // "--host-arch", targetArchitecture,
+                    // "--target-arch", targetArchitecture,
                 ].concat(dpkgBuildPackageOpts.split(" "))
             ))
             core.endGroup()

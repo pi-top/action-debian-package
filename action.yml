@@ -19,19 +19,20 @@ inputs:
   dpkg_buildpackage_opts:
     description: Command line parameters provided to 'dpkg-buildpackage' (note that '-a' is automatically provided for target architectures specified by target_architectures)
     required: false
-    default: "-us -uc -d"
+    default: "-us -uc -d --post-clean"
   lintian_opts:
     description: Command line parameters provided to 'lintian'
     required: false
     default: ""
-  get_dev_packages_from_backports:
-    description: Only set to 1 if you know what you are doing. All other values are considered as 0
+  distribution:
+    description: Distribution to build against (e.g. 'stable'). If left blank, it is inferred from the changelog.
     required: false
-    default: "0"
-  _uses_pybuild:
-    description: Workaround for https://github.com/pi-top/action-debian-package/issues/3. If set to "1", this will install libpython3.*-minimal for all target architectures, so that pybuild can cross-compile
+    default: ""
+  additional_target_arch_multiarch_packages:
+    description: Comma-separated list of target-architecture dependent packages to install, in addition to build dependencies.
     required: false
-    default: "0"
+    # Used by pybuild for Python packages
+    default: "libpython3.7-minimal"
 
 runs:
   using: node12
