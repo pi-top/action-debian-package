@@ -37,9 +37,9 @@ async function main() {
 
         const file = path.join(sourceDirectory, "debian/changelog")
         const changelog = await firstline(file)
-        const regex = /^(?<sourcePackage>.+) \(((?<epoch>[0-9]+):)?(?<version>[^:-]+)(-(?<revision>[^:-]+))?\) (?<sourceDistribution>.+);/
+        const regex = /^(?<sourcePackage>.+) \(((?<epoch>[0-9]+):)?(?<upstreamVersion>[^:-]+)(-(?<debianRevision>[^:-]+))?\) (?<sourceDistribution>.+);/
         const match = changelog.match(regex)
-        const { sourcePackage, epoch, version, revision, sourceDistribution } = match.groups
+        const { sourcePackage, epoch, upstreamVersion, debianRevision, sourceDistribution } = match.groups
         const container = sourcePackage
 
         //////////////////////////////////////
@@ -70,8 +70,8 @@ async function main() {
         const details = {
             sourcePackage: sourcePackage,
             epoch: epoch,
-            version: version,
-            revision: revision,
+            upstreamVersion: upstreamVersion,
+            debianRevision: debianRevision,
             sourceDistribution: sourceDistribution,
             imageOS: imageOS,
             container: container,
@@ -111,17 +111,17 @@ async function main() {
         core.endGroup()
 
         //////////////////////////////////////
-        // Create tarball of source if package is revision of upstream
+        // Create tarball of source if package is Debian revision of upstream
         //////////////////////////////////////
-        if (revision) {
+        if (debianRevision) {
             core.startGroup("Create tarball")
             await exec.exec("docker", ["exec", container].concat(
                 [
                     "tar",
                     "--exclude-vcs",
                     "--exclude", "./debian",
-                    "--transform", `s/^\./${sourcePackage}-${version}/`,
-                    "-cvzf", `${buildDirectory}/${sourcePackage}_${version}.orig.tar.gz`,
+                    "--transform", `s/^\./${sourcePackage}-${upstreamVersion}/`,
+                    "-cvzf", `${buildDirectory}/${sourcePackage}_${upstreamVersion}.orig.tar.gz`,
                     "-C", sourceDirectory,
                     "./"
                 ]
@@ -235,7 +235,7 @@ async function main() {
                 "find",
                 buildDirectory,
                 "-maxdepth", "1",
-                "-name", `*${version}*.*`,
+                "-name", `*${upstreamVersion}*.*`,
                 "-type", "f",
                 "-print",
                 "-exec", "mv", "{}", artifactsDirectory, ";"
