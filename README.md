@@ -10,13 +10,13 @@ Note that this will build the package for the host machine's architecture (amd64
 ## Usage
 
 ```yaml
-- name: Build 32-bit and 64-bit ARM packages
-  uses: pi-top/action-debian-package@v4
+- name: Build Debian package
+  uses: pi-top/action-debian-package@v0.1.0
   with:
       source_directory: "./"
       artifacts_directory: "./"
-      target_architectures: "amd64,armhf"
-      dpkg_buildpackage_opts: "-us -uc -d --post-clean"
+      target_architecture: "amd64"
+      dpkg_buildpackage_opts: "-us -uc -d"
       lintian_opts: ""
 
 ```

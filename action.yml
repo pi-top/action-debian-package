@@ -23,7 +23,7 @@ inputs:
   dpkg_buildpackage_opts:
     description: Command line parameters provided to 'dpkg-buildpackage' (note that '-a' is automatically provided for target architectures specified by target_architectures)
     required: false
-    default: "-us -uc -d --post-clean"
+    default: "-us -uc -d"
   lintian_opts:
     description: Command line parameters provided to 'lintian'
     required: false

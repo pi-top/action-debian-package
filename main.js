@@ -58,7 +58,7 @@ async function main() {
         // Don't sign anything - no keys provided
         // Don't worry about build dependencies - we have already installed them
         // (Seems to not recognize that some packages are installed)
-        const _defaultDpkgBuildPackageOpts = "-us -uc -d --post-clean"
+        const _defaultDpkgBuildPackageOpts = "-us -uc -d"
         const dpkgBuildPackageOpts = core.getInput("dpkg_buildpackage_opts") || _defaultDpkgBuildPackageOpts
         const lintianOpts = core.getInput("lintian_opts") || ""
         const buildDistribution = core.getInput("distribution") || getReleaseDistribution(sourceDistribution)
