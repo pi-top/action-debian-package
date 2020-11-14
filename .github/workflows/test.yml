@@ -17,6 +17,9 @@ jobs:
           - package: lolcat
             repo: https://salsa.debian.org/ruby-team/lolcat.git
             ref: debian/100.0.1-2
+          - package: micro
+            repo: https://salsa.debian.org/go-team/packages/micro.git
+            ref: debian/2.0.6-2_bpo10+1
           - package: deber
             repo: https://github.com/dawidd6/deber.git
             ref: v1.0.0
@@ -26,6 +29,9 @@ jobs:
           - package: netcat-openbsd
             repo: https://git.launchpad.net/ubuntu/+source/netcat-openbsd
             ref: import/1.206-1ubuntu1
+          - package: iproute2
+            repo: https://git.launchpad.net/ubuntu/+source/iproute2
+            ref: import/4.18.0-1ubuntu2_ubuntu18.04.1
     steps:
       - name: Checkout code
         uses: actions/checkout@v2
