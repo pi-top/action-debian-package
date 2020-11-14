@@ -8,9 +8,9 @@ jobs:
     strategy:
       matrix:
         include:
-          # - package: pitop
-          #   repo: https://github.com/pi-top/pi-top-Python-API.git
-          #   ref: master
+          - package: pitop
+            repo: https://github.com/pi-top/pi-top-Python-SDK.git
+            ref: master
           - package: at
             repo: https://salsa.debian.org/debian/at.git
             ref: debian/3.1.23-1
