@@ -4,10 +4,6 @@ branding:
   color: red
   icon: package
 inputs:
-  target_architectures:
-    description: Comma-separated options list of target architectures to build for
-    required: false
-    default: "amd64"
   source_directory:
     description: Directory where Debian sources are, relative to workspace
     required: false
@@ -16,20 +12,20 @@ inputs:
     description: Directory where build artifacts will be placed, relative to workspace
     required: false
     default: "./"
+  target_architecture:
+    description: "Target architecture to build for. Currently supported values: amd64, armhf, arm64"
+    required: false
+    default: "amd64"
+  distribution:
+    description: Distribution to build against (e.g. 'stable'). If left blank, it is inferred from the changelog.
+    required: false
+    default: ""
   dpkg_buildpackage_opts:
     description: Command line parameters provided to 'dpkg-buildpackage' (note that '-a' is automatically provided for target architectures specified by target_architectures)
     required: false
     default: "-us -uc -d --post-clean"
   lintian_opts:
     description: Command line parameters provided to 'lintian'
-    required: false
-    default: ""
-  distribution:
-    description: Distribution to build against (e.g. 'stable'). If left blank, it is inferred from the changelog.
-    required: false
-    default: ""
-  additional_target_arch_multiarch_packages:
-    description: Comma-separated list of target-architecture dependent packages to install, in addition to build dependencies.
     required: false
     default: ""
 

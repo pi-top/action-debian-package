@@ -21,6 +21,8 @@ async function getOS(distribution) {
 
 async function main() {
     try {
+        const hostArch = "amd64"
+
         /////////////////////////////////////////
         // Command line arguments - directories
         /////////////////////////////////////////
@@ -45,11 +47,13 @@ async function main() {
         //////////////////////////////////////
         // Command line arguments - other
         //////////////////////////////////////
-        const targetArchitectures = core.getInput("target_architectures").replace(" ", "").split(",") || ["amd64"]
-        assert(targetArchitectures.length > 0)
+        const targetArchitecture = core.getInput("target_architecture") || hostArch
 
-        const additionalPackagesArchDep = core.getInput("additional_target_arch_multiarch_packages").replace(" ", "").split(",") || []
-
+        assert(
+            (targetArchitecture == hostArch) ||
+            (targetArchitecture == "armhf") ||
+            (targetArchitecture == "arm64")
+        )
 
         // Don't sign anything - no keys provided
         // Don't worry about build dependencies - we have already installed them
@@ -59,14 +63,22 @@ async function main() {
         const lintianOpts = core.getInput("lintian_opts") || ""
         const buildDistribution = core.getInput("distribution") || getReleaseDistribution(sourceDistribution)
         const imageOS = await getOS(buildDistribution)
-        const image = imageOS + ":" + buildDistribution
+
+        imageArchPrefix = ""
+        if (targetArchitecture == "armhf") {
+            imageArchPrefix = "arm32v7/"
+        } else if (targetArchitecture == "arm64") {
+            imageArchPrefix = "arm64v8/"
+        }
+
+        const image = imageArchPrefix + imageOS + ":" + buildDistribution
 
         fs.mkdirSync(artifactsDirectory, { recursive: true })
 
         //////////////////////////////////////
         // Print details
         //////////////////////////////////////
-        core.startGroup("Print details")
+        core.startGroup("Host: Print details")
         const details = {
             sourcePackage: sourcePackage,
             epoch: epoch,
@@ -84,26 +96,68 @@ async function main() {
         console.log(details)
         core.endGroup()
 
+        function getDockerCreateArgsForArch(arch) {
+            if (arch == hostArch) {
+                args = []
+            } else {
+                args = [
+                    "--volume",
+                    "/usr/bin/qemu-"+arch+"-static:/usr/bin/qemu-"+arch+"-static"
+                ]
+            }
+
+            return args.concat([
+                "--volume", workspaceDirectory + ":" + workspaceDirectory,
+                "--workdir", sourceDirectory,
+                "--env", "DH_VERBOSE=1",
+                "--env", "DEBIAN_FRONTEND=noninteractive",
+                "--env", "DPKG_COLORS=always",
+                "--env", "FORCE_UNSAFE_CONFIGURE=1",
+                "--tty",
+                image,
+                "sleep", "inf"
+            ])
+        }
+
+        //////////////////////////////////////
+        // Install emulation dependencies
+        //////////////////////////////////////
+        if (targetArchitecture != hostArch) {
+            core.startGroup("Host: Update packages list")
+            await exec.exec("sudo", ["apt-get", "update"])
+            core.endGroup()
+
+            core.startGroup("Host: Install emulation requirements")
+            await exec.exec("sudo", [
+                "apt-get",
+                "install",
+                "-y",
+                // Emulating other architectures
+                "qemu-user",
+                "qemu-user-static",
+                "binfmt-support"
+            ])
+            core.endGroup()
+
+            if (targetArchitecture == "armhf") {
+                qemuArch = "arm"
+            } else {
+                qemuArch = "aarch64"
+            }
+        }
+
         //////////////////////////////////////
         // Create and start container
         //////////////////////////////////////
-        core.startGroup("Create container")
+        core.startGroup("Host: Create container")
         await exec.exec("docker", [
-            "create",
-            "--name", container,
-            "--volume", workspaceDirectory + ":" + workspaceDirectory,
-            "--workdir", sourceDirectory,
-            "--env", "DH_VERBOSE=1",
-            "--env", "DEBIAN_FRONTEND=noninteractive",
-            "--env", "DPKG_COLORS=always",
-            "--env", "FORCE_UNSAFE_CONFIGURE=1",
-            "--tty",
-            image,
-            "sleep", "inf"
-        ])
+                "create",
+                "--name", container,
+                ].concat(getDockerCreateArgsForArch(qemuArch))
+        )
         core.endGroup()
 
-        core.startGroup("Start container")
+        core.startGroup("Host: Start container")
         await exec.exec("docker", [
             "start",
             container
@@ -114,7 +168,7 @@ async function main() {
         // Create tarball of source if package is Debian revision of upstream
         //////////////////////////////////////
         if (debianRevision) {
-            core.startGroup("Create tarball")
+            core.startGroup("Container: Create tarball")
             await exec.exec("docker", ["exec", container].concat(
                 [
                     "tar",
@@ -129,22 +183,9 @@ async function main() {
         }
 
         //////////////////////////////////////
-        // Add target architectures
-        //////////////////////////////////////
-        for (const targetArchitecture of targetArchitectures) {
-            if (targetArchitecture != "amd64") {
-                core.startGroup("Add target architecture: " + targetArchitecture)
-                await exec.exec("docker", ["exec", container].concat(
-                    ["dpkg", "--add-architecture", targetArchitecture]
-                ))
-                core.endGroup()
-            }
-        }
-
-        //////////////////////////////////////
         // Update packages list
         //////////////////////////////////////
-        core.startGroup("Update packages list")
+        core.startGroup("Container: Update packages list")
         await exec.exec("docker", ["exec", container].concat(
             ["apt-get", "update"]
         ))
@@ -153,38 +194,22 @@ async function main() {
         //////////////////////////////////////
         // Install required packages
         //////////////////////////////////////
-        function getDevPackages() {
-            devPackages = [
-                // General packaging stuff
-                "dpkg-dev",
-                "debhelper",
-                "lintian"
-            ]
-
-            // Add additional target architecture-specific packages
-            const additionalPackagesToInstall = targetArchitectures.reduce(
-                (accumulator, targetArchitecture) => [
-                    ...accumulator,
-                    ...additionalPackagesArchDep.map(package => `${package}:${targetArchitecture}`)
-                ],
-                []
-            )
-
-            return devPackages.concat(additionalPackagesToInstall)
-        }
-
-        core.startGroup("Install development packages")
+        core.startGroup("Container: Install development packages")
         await exec.exec("docker", ["exec", container].concat(
             [
                 "apt-get", "install",
                 "-t", buildDistribution,
                 "--no-install-recommends",
-                "-y"
-            ].concat(getDevPackages())
+                "-y",
+                // General packaging stuff
+                "dpkg-dev",
+                "debhelper",
+                "lintian"
+            ]
         ))
         core.endGroup()
 
-        core.startGroup("Install build dependencies")
+        core.startGroup("Container: Install build dependencies")
         await exec.exec("docker", ["exec", container].concat(
             [
                 "apt-get", "build-dep",
@@ -195,40 +220,33 @@ async function main() {
         core.endGroup()
 
         //////////////////////////////////////
-        // Build package and run static analysis for all architectures
+        // Build package and run static analysis
         //////////////////////////////////////
-        for (const targetArchitecture of targetArchitectures) {
-            core.startGroup("Build package for architecture: " + targetArchitecture)
-            await exec.exec("docker", ["exec", container].concat(
-                [
-                    "dpkg-buildpackage",
-                    "-a", targetArchitecture,
-                    // "--host-arch", targetArchitecture,
-                    // "--target-arch", targetArchitecture,
-                ].concat(dpkgBuildPackageOpts.split(" "))
-            ))
-            core.endGroup()
+        core.startGroup("Container: Build package")
+        await exec.exec("docker", ["exec", container].concat(
+            ["dpkg-buildpackage"].concat(dpkgBuildPackageOpts.split(" "))
+        ))
+        core.endGroup()
 
-            core.startGroup("Run static analysis for architecture: " + targetArchitecture)
-            await exec.exec("docker", ["exec", container].concat(
-                [
-                    "find",
-                    buildDirectory,
-                    "-maxdepth", "1",
-                    "-name", `*${targetArchitecture}.changes`,
-                    "-type", "f",
-                    "-print",
-                    "-exec",
-                    "lintian"
-                ]).concat(lintianOpts.split(" ")).concat(["{}", "+"]
-            ))
-            core.endGroup()
-        }
+        core.startGroup("Container: Run static analysis")
+        await exec.exec("docker", ["exec", container].concat(
+            [
+                "find",
+                buildDirectory,
+                "-maxdepth", "1",
+                "-name", `*${targetArchitecture}.changes`,
+                "-type", "f",
+                "-print",
+                "-exec",
+                "lintian"
+            ]).concat(lintianOpts.split(" ")).concat(["{}", "+"]
+        ))
+        core.endGroup()
 
         //////////////////////////////////////
         // Move artifacts
         //////////////////////////////////////
-        core.startGroup("Move artifacts")
+        core.startGroup("Container: Move artifacts")
         await exec.exec("docker", ["exec", container].concat(
             [
                 "find",
