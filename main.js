@@ -120,7 +120,6 @@ async function main() {
                     "tar",
                     "--exclude-vcs",
                     "--exclude", "./debian",
-                    "--transform", `s/^\./${sourcePackage}-${upstreamVersion}/`,
                     "-cvzf", `${buildDirectory}/${sourcePackage}_${upstreamVersion}.orig.tar.gz`,
                     "-C", sourceDirectory,
                     "./"
