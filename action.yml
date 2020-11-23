@@ -16,8 +16,12 @@ inputs:
     description: "Target architecture to build for. Currently supported values: amd64, armhf, arm64"
     required: false
     default: "amd64"
+  docker_image:
+    description: Docker image to use for the build (e.g. 'debian:buster-backports'). If left blank, it is inferred from the changelog. Ideally, the base image of this image matches the 'distribution' provided (or inferred from the changelog).
+    required: false
+    default: ""
   distribution:
-    description: Distribution to build against (e.g. 'stable'). If left blank, it is inferred from the changelog.
+    description: Distribution to build against (e.g. 'buster'). If left blank, it is inferred from the changelog. If this is used with 'docker_image', this repository must be available in the image used. Ideally, this would be the base image.
     required: false
     default: ""
   dpkg_buildpackage_opts:
