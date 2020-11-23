@@ -135,6 +135,8 @@ async function main() {
 
             core.startGroup("Host: Enable experimental Docker features")
             dockerDaemonFile = "/etc/docker/daemon.json"
+            // Allow writing to file without being sudo
+            await exec.exec("sudo", ["chmod", "o+w", dockerDaemonFile])
             const dockerDaemonData = JSON.parse(fs.readFileSync(dockerDaemonFile))
             dockerDaemonData.experimental = true
             fs.writeFileSync(
