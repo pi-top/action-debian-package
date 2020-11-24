@@ -13,7 +13,7 @@ inputs:
     required: false
     default: "./"
   target_architecture:
-    description: "Target architecture to build for. Currently supported values: amd64, armhf, arm64"
+    description: "Target architecture to build for. Defaults to amd64. Currently supported values: amd64, arm64, armhf, i386, mips64el, ppc64el, s390x"
     required: false
     default: "amd64"
   docker_image:
