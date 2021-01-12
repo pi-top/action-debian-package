@@ -62,17 +62,14 @@ async function main() {
         /////////////////////////////////////////
         // Command line arguments - directories
         /////////////////////////////////////////
-        const sourceRelativeDirectory = core.getInput("source_directory") || "./"
-        const artifactsRelativeDirectory = core.getInput("artifacts_directory") || "./"
+        const workspaceDirectory = process.cwd()
+        const sourceDirectory = core.getInput("source_directory") || workspaceDirectory
+        const artifactsDirectory = core.getInput("artifacts_directory") || workspaceDirectory
+        const buildDirectory = path.dirname(sourceDirectory)
 
         /////////////////////////////////////////
         // Read changelog from source
         /////////////////////////////////////////
-        const workspaceDirectory = process.cwd()
-        const sourceDirectory = path.join(workspaceDirectory, sourceRelativeDirectory)
-        const buildDirectory = path.dirname(sourceDirectory)
-        const artifactsDirectory = path.join(workspaceDirectory, artifactsRelativeDirectory)
-
         const file = path.join(sourceDirectory, "debian/changelog")
         const changelog = await firstline(file)
         const regex = /^(?<sourcePackage>.+) \(((?<epoch>[0-9]+):)?(?<upstreamVersion>[^:-]+)(-(?<debianRevision>[^:-]+))?\) (?<sourceDistribution>.+);/
