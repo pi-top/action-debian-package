@@ -92,8 +92,6 @@ async function main() {
         const imageOS = await getOS(buildDistribution)
         const dockerImage = core.getInput("docker_image") || imageOS + ":" + buildDistribution
 
-        fs.mkdirSync(artifactsDirectory, { recursive: true })
-
         //////////////////////////////////////
         // Print details
         //////////////////////////////////////
@@ -263,6 +261,7 @@ async function main() {
         // Move artifacts
         //////////////////////////////////////
         core.startGroup("Container: Move artifacts")
+        fs.mkdirSync(artifactsDirectory, { recursive: true })
         await exec.exec("docker", ["exec", container].concat(
             [
                 "find",
